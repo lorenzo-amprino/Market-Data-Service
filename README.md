@@ -81,6 +81,14 @@ Run the application against the local PostgreSQL instance:
 SPRING_PROFILES_ACTIVE=local ./mvnw spring-boot:run
 ```
 
+Health and PostgreSQL-backed readiness checks are available at:
+
+```text
+GET /actuator/health
+GET /actuator/health/liveness
+GET /actuator/health/readiness
+```
+
 The `local` profile reads these optional environment variables:
 
 - `MARKET_DATA_DB_URL`

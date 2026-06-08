@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 import com.lamprino.marketdata.domain.model.FinancialInstrumentDetail;
+import com.lamprino.marketdata.domain.model.FinancialInstrumentLookup;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentSummary;
 import com.lamprino.marketdata.domain.repository.FinancialInstrumentCatalogRepository;
 
@@ -32,6 +33,36 @@ public class FinancialInstrumentCatalogService {
 
     public Optional<FinancialInstrumentDetail> findById(UUID instrumentId) {
         return repository.findById(instrumentId);
+    }
+
+    public Optional<FinancialInstrumentLookup> lookupByIsin(String isin) {
+        String normalizedIsin = normalizeText(isin);
+        if (normalizedIsin.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findByIsin(normalizedIsin);
+    }
+
+    public Optional<FinancialInstrumentLookup> lookupByVenueCodeAndSymbol(String venueCode, String symbol) {
+        String normalizedVenueCode = normalizeText(venueCode);
+        String normalizedSymbol = normalizeText(symbol);
+        if (normalizedVenueCode.isBlank() || normalizedSymbol.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findByVenueCodeAndSymbol(normalizedVenueCode, normalizedSymbol);
+    }
+
+    public Optional<FinancialInstrumentLookup> lookupByProviderIdentifier(String providerCode, String providerIdentifier) {
+        String normalizedProviderCode = normalizeText(providerCode);
+        String normalizedProviderIdentifier = normalizeText(providerIdentifier);
+        if (normalizedProviderCode.isBlank() || normalizedProviderIdentifier.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findByProviderIdentifier(normalizedProviderCode, normalizedProviderIdentifier);
+    }
+
+    private String normalizeText(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private int normalizeLimit(Integer requestedLimit) {

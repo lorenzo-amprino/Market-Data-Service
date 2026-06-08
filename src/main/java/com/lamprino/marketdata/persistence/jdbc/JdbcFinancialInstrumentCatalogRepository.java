@@ -15,6 +15,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Repository;
 
 import com.lamprino.marketdata.domain.model.FinancialInstrumentDetail;
+import com.lamprino.marketdata.domain.model.FinancialInstrumentLookup;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentSummary;
 import com.lamprino.marketdata.domain.model.ListingSummary;
 import com.lamprino.marketdata.domain.repository.FinancialInstrumentCatalogRepository;
@@ -87,6 +88,56 @@ class JdbcFinancialInstrumentCatalogRepository implements FinancialInstrumentCat
                 .findFirst();
     }
 
+    @Override
+    public Optional<FinancialInstrumentLookup> findByIsin(String isin) {
+        assertJdbcTemplateAvailable();
+        return jdbcTemplate.query("""
+                select id, name, instrument_type, isin, status, data_availability
+                from financial_instrument
+                where isin = ?
+                """, (rs, rowNum) -> new FinancialInstrumentLookup(
+                        "isin",
+                        mapInstrumentSummaryWithoutListings(rs),
+                        null), isin)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<FinancialInstrumentLookup> findByVenueCodeAndSymbol(String venueCode, String symbol) {
+        assertJdbcTemplateAvailable();
+        return jdbcTemplate.query("""
+                select fi.id, fi.name, fi.instrument_type, fi.isin, fi.status, fi.data_availability,
+                       l.id as listing_id, l.venue_code, l.symbol, l.currency_code, l.status as listing_status, l.preferred
+                from listing l
+                join financial_instrument fi on fi.id = l.financial_instrument_id
+                where l.venue_code = ? and l.symbol = ?
+                """, (rs, rowNum) -> new FinancialInstrumentLookup(
+                        "venue_symbol",
+                        mapInstrumentSummaryWithoutListings(rs),
+                        mapListingSummary(rs)), venueCode, symbol)
+                .stream()
+                .findFirst();
+    }
+
+    @Override
+    public Optional<FinancialInstrumentLookup> findByProviderIdentifier(String providerCode, String providerIdentifier) {
+        assertJdbcTemplateAvailable();
+        return jdbcTemplate.query("""
+                select fi.id, fi.name, fi.instrument_type, fi.isin, fi.status, fi.data_availability,
+                       l.id as listing_id, l.venue_code, l.symbol, l.currency_code, l.status as listing_status, l.preferred
+                from provider_identifier pi
+                left join listing l on l.id = pi.listing_id
+                join financial_instrument fi on fi.id = coalesce(pi.financial_instrument_id, l.financial_instrument_id)
+                where pi.provider_code = ? and pi.provider_identifier = ?
+                """, (rs, rowNum) -> new FinancialInstrumentLookup(
+                        "provider_identifier",
+                        mapInstrumentSummaryWithoutListings(rs),
+                        mapNullableListingSummary(rs)), providerCode, providerIdentifier)
+                .stream()
+                .findFirst();
+    }
+
     private void assertJdbcTemplateAvailable() {
         if (jdbcTemplate == null) {
             throw new IllegalStateException("Financial Instrument catalog requires JDBC infrastructure");
@@ -101,6 +152,35 @@ class JdbcFinancialInstrumentCatalogRepository implements FinancialInstrumentCat
                 rs.getString("isin"),
                 rs.getString("status"),
                 rs.getString("data_availability"));
+    }
+
+    private FinancialInstrumentSummary mapInstrumentSummaryWithoutListings(ResultSet rs) throws SQLException {
+        return new FinancialInstrumentSummary(
+                rs.getObject("id", UUID.class),
+                rs.getString("name"),
+                rs.getString("instrument_type"),
+                rs.getString("isin"),
+                rs.getString("status"),
+                rs.getString("data_availability"),
+                List.of());
+    }
+
+    private ListingSummary mapListingSummary(ResultSet rs) throws SQLException {
+        return new ListingSummary(
+                rs.getObject("listing_id", UUID.class),
+                rs.getString("venue_code"),
+                rs.getString("symbol"),
+                rs.getString("currency_code"),
+                rs.getString("listing_status"),
+                rs.getBoolean("preferred"));
+    }
+
+    private ListingSummary mapNullableListingSummary(ResultSet rs) throws SQLException {
+        UUID listingId = rs.getObject("listing_id", UUID.class);
+        if (listingId == null) {
+            return null;
+        }
+        return mapListingSummary(rs);
     }
 
     private Map<UUID, List<ListingSummary>> listingsByInstrumentId(List<UUID> instrumentIds) {

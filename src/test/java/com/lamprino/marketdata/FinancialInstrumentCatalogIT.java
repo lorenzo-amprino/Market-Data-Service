@@ -1,6 +1,7 @@
 package com.lamprino.marketdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,9 +42,11 @@ class FinancialInstrumentCatalogIT {
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("delete from provider_identifier");
         jdbcTemplate.update("delete from listing");
         jdbcTemplate.update("delete from venue");
         jdbcTemplate.update("delete from financial_instrument");
+        jdbcTemplate.update("delete from data_provider");
 
         OffsetDateTime now = OffsetDateTime.parse("2026-06-01T10:00:00Z");
         jdbcTemplate.update("""
@@ -65,6 +69,90 @@ class FinancialInstrumentCatalogIT {
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, listingId, instrumentId, "XETR", "VWCE", "EUR", "active", true,
                 "available", null, true, true, now, now);
+        jdbcTemplate.update("""
+                insert into data_provider (provider_code, name, enabled, created_at, updated_at)
+                values (?, ?, ?, ?, ?)
+                """, "yahoo", "Yahoo Finance", true, now, now);
+        jdbcTemplate.update("""
+                insert into provider_identifier (
+                  id, provider_code, provider_identifier, financial_instrument_id, listing_id, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?)
+                """, UUID.fromString("44444444-4444-4444-4444-444444444444"), "yahoo", "VWCE.DE", null, listingId, now, now);
+    }
+
+    @Test
+    void looksUpFinancialInstrumentByIsin() {
+        ResponseEntity<Map> response = restTemplate.getForEntity("/instruments/lookup?isin={isin}", Map.class, "IE00BK5BQT80");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("instrument_id", instrumentId.toString());
+        assertThat(response.getBody()).containsEntry("matched_by", "isin");
+        assertThat(response.getBody()).containsKey("instrument");
+        assertThat(response.getBody()).containsEntry("listing", null);
+    }
+
+    @Test
+    void rejectsDuplicateIsinWhenPresent() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-06-01T10:00:00Z");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into financial_instrument (
+                  id, instrument_type, name, isin, status, data_availability,
+                  universe_member, sync_enabled, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, UUID.fromString("55555555-5555-5555-5555-555555555555"), "etf",
+                "Duplicate ISIN ETF", "IE00BK5BQT80", "active", "available", false, true, now, now))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void looksUpFinancialInstrumentByVenueAndListingSymbol() {
+        ResponseEntity<Map> response = restTemplate.getForEntity(
+                "/instruments/lookup?venue_code={venueCode}&symbol={symbol}", Map.class, "XETR", "VWCE");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("instrument_id", instrumentId.toString());
+        assertThat(response.getBody()).containsEntry("matched_by", "venue_symbol");
+        Map<?, ?> listing = (Map<?, ?>) response.getBody().get("listing");
+        assertThat(listing.get("listing_id")).isEqualTo(listingId.toString());
+        assertThat(listing.get("venue_code")).isEqualTo("XETR");
+        assertThat(listing.get("symbol")).isEqualTo("VWCE");
+    }
+
+    @Test
+    void rejectsDuplicateListingSymbolsWithinVenue() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-06-01T10:00:00Z");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into listing (
+                  id, financial_instrument_id, venue_code, symbol, currency_code, status,
+                  preferred, data_availability, universe_member, sync_enabled, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, UUID.fromString("66666666-6666-6666-6666-666666666666"), instrumentId,
+                "XETR", "VWCE", "EUR", "active", false, "available", false, true, now, now))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void looksUpFinancialInstrumentByProviderIdentifier() {
+        ResponseEntity<Map> response = restTemplate.getForEntity(
+                "/instruments/lookup?provider={provider}&provider_identifier={providerIdentifier}",
+                Map.class, "yahoo", "VWCE.DE");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("instrument_id", instrumentId.toString());
+        assertThat(response.getBody()).containsEntry("matched_by", "provider_identifier");
+        Map<?, ?> listing = (Map<?, ?>) response.getBody().get("listing");
+        assertThat(listing.get("listing_id")).isEqualTo(listingId.toString());
+    }
+
+    @Test
+    void returnsNotFoundWhenExactLookupDoesNotMatchALocalResource() {
+        ResponseEntity<Map> response = restTemplate.getForEntity("/instruments/lookup?isin={isin}", Map.class, "missing");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        Map<?, ?> error = (Map<?, ?>) response.getBody().get("error");
+        assertThat(error.get("code")).isEqualTo("instrument_not_found");
     }
 
     @Test

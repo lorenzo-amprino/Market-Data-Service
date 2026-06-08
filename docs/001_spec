@@ -1,0 +1,824 @@
+# Market Data Service
+
+## Specifica Funzionale e Tecnica
+
+Versione: 1.0
+Data: Giugno 2026
+
+---
+
+# 1. Obiettivo
+
+Realizzare un servizio autonomo incaricato di:
+
+* recuperare dati finanziari da Data Provider esterni;
+* normalizzare le informazioni;
+* mantenere uno storico locale;
+* esporre API interne per gli altri servizi.
+
+Il sistema NON richiede quotazioni real-time.
+
+Sono sufficienti aggiornamenti periodici.
+
+---
+
+# 2. Responsabilità del servizio
+
+Il servizio deve gestire:
+
+## Azioni
+
+* italiane
+* europee
+* americane
+
+---
+
+## ETF
+
+* UCITS
+* ETF europei
+* ETF USA
+
+---
+
+## Bond
+
+* governativi
+* corporate
+* inflation linked
+* zero coupon
+
+---
+
+# 3. Architettura
+
+```text
+Data Providers
+        |
+        v
+Data Collector
+        |
+        v
+Normalization Layer
+        |
+        v
+Market Database
+        |
+        v
+Internal APIs
+        |
+        +--> Portfolio Service
+        +--> Analytics Service
+        +--> PIR Service (future)
+```
+
+---
+
+# 4. Requisiti funzionali
+
+## RF-01
+
+Recuperare strumenti finanziari.
+
+---
+
+## RF-02
+
+Aggiornare periodicamente i prezzi.
+
+---
+
+## RF-03
+
+Mantenere storico prezzi.
+
+---
+
+## RF-04
+
+Recuperare dati anagrafici.
+
+---
+
+## RF-05
+
+Recuperare dividendi.
+
+---
+
+## RF-06
+
+Recuperare corporate actions.
+
+* split
+* reverse split
+* fusioni
+
+---
+
+# 5. Frequenza aggiornamento
+
+## Prezzi
+
+Aggiornamento periodico, indicativamente:
+
+```text
+ogni 6 ore
+```
+
+oppure
+
+```text
+4 volte al giorno
+```
+
+La frequenza non è un vincolo rigido: il servizio può aggiornare i prezzi più spesso quando provider, costi e rate limit lo consentono.
+
+Il real-time non è necessario per i casi d'uso v1.
+
+---
+
+## Dati anagrafici
+
+Aggiornamento:
+
+```text
+1 volta al giorno
+```
+
+---
+
+## Corporate actions
+
+Aggiornamento:
+
+```text
+1 volta al giorno
+```
+
+---
+
+# 6. Data Provider supportati
+
+## Priorità 1
+
+Yahoo Finance
+
+Vantaggi:
+
+* gratuito
+* copertura globale
+* ETF
+* bond
+* dividendi
+
+---
+
+## Priorità 2
+
+Alpha Vantage
+
+Fallback provider.
+
+---
+
+## Priorità 3
+
+Polygon
+
+Versione premium futura.
+
+---
+
+## Priorità 4
+
+Financial Modeling Prep
+
+Data Provider alternativo.
+
+---
+
+# 7. Modello dati
+
+## Financial Instrument
+
+```json
+{
+  "id": "uuid",
+  "isin": "IT0003128367",
+  "name": "Enel Spa",
+  "instrument_type": "stock",
+  "issuer_country": "IT",
+  "status": "active",
+  "data_availability": "available",
+  "data_availability_reason": null
+}
+```
+
+## Listing
+
+```json
+{
+  "id": "uuid",
+  "instrument_id": "uuid",
+  "venue_code": "XMIL",
+  "symbol": "ENEL",
+  "currency": "EUR",
+  "status": "active",
+  "preferred": true
+}
+```
+
+---
+
+# 8. Instrument Type
+
+Valori ammessi:
+
+```text
+stock
+etf
+bond
+```
+
+---
+
+# 9. Price History
+
+V1 espone i prezzi nella valuta della Listing. Il servizio può memorizzare Listing in valute diverse, ma non fornisce tassi FX o conversione valutaria in v1. I consumer sono responsabili della propria policy valutaria.
+
+V1 stores daily unadjusted OHLCV prices only. Intraday synchronisation may refresh the current trading day's daily bar, but the service does not expose intraday bars in v1. When supplied by a Data Provider, an optional adjusted close may be stored; v1 does not calculate adjusted OHLCV internally.
+
+Observed prices can be provisional or final. The current trading day's daily bar is provisional until the trading day is complete and the provider data is settled. Latest price endpoints return the freshest available observed price, whether provisional or final, and include its status in the response.
+
+```json
+{
+  "listing_id": "...",
+  "date": "2026-06-01",
+  "open": 8.10,
+  "high": 8.20,
+  "low": 8.05,
+  "close": 8.18,
+  "adjusted_close": 8.12,
+  "volume": 1200000,
+  "status": "final"
+}
+```
+
+---
+
+# 10. Dividend History
+
+```json
+{
+  "instrument_id": "...",
+  "ex_date": "2026-05-15",
+  "payment_date": "2026-05-22",
+  "amount": 0.43,
+  "currency": "EUR"
+}
+```
+
+---
+
+# 11. Bond Metadata
+
+V1 includes basic bond reference data and daily observed prices when provider data is available. V1 does not calculate accrued interest, yield, duration, or clean/dirty price conversion.
+
+```json
+{
+  "isin": "IT0005438004",
+  "issuer": "Repubblica Italiana",
+  "maturity": "2035-08-01",
+  "coupon": 3.50,
+  "coupon_frequency": "annual",
+  "currency": "EUR",
+  "bond_type": "government"
+}
+```
+
+---
+
+# 12. ETF Metadata
+
+```json
+{
+  "isin": "...",
+  "fund_manager": "iShares",
+  "domicile_country": "IE",
+  "ter": 0.20,
+  "replication": "physical",
+  "distribution_policy": "accumulating",
+  "benchmark": "MSCI World",
+  "index_provider": "MSCI"
+}
+```
+
+---
+
+# 14. Database
+
+PostgreSQL è il database primario e la fonte di verità del servizio. Il modello usa tabelle relazionali per identità, relazioni e serie storiche; campi JSONB possono essere usati per metadati flessibili, provider-specifici o specifici di un tipo di strumento finanziario.
+
+MongoDB o altri database schemaless non sono usati come database primario in v1. Possono essere valutati in futuro per archiviazione raw delle risposte dei Data Provider o staging ingestion.
+
+Le risposte raw dei Data Provider possono essere conservate temporaneamente come evidenza di ingestion per debugging e reprocessing. La retention predefinita è 7 giorni e deve rispettare termini e licenze dei Data Provider.
+
+## Financial Instrument Table
+
+Contiene:
+
+* strumenti finanziari
+* identità canonica
+* metadati comuni
+* stato lifecycle
+* data availability esposta ai consumer: available, stale, unavailable
+* motivo opzionale della data availability
+* appartenenza alla Universe per schedulazione ingestion
+* sync_enabled interno, non esposto nelle API
+
+---
+
+## Venue Table
+
+Contiene:
+
+* venue code
+* nome venue
+* country della venue
+* timezone
+* calendar code
+
+Esempio:
+
+```json
+{
+  "venue_code": "XMIL",
+  "name": "Borsa Italiana",
+  "country": "IT",
+  "timezone": "Europe/Rome",
+  "calendar_code": "XMIL"
+}
+```
+
+---
+
+## Listing Table
+
+Contiene:
+
+* listing degli strumenti finanziari
+* venue code
+* simboli di mercato
+* valuta di negoziazione
+* preferred listing
+
+---
+
+## Observed Price Table
+
+Contiene:
+
+* storico prezzi giornalieri per listing
+* stato provisional/final
+
+---
+
+## Dividend Table
+
+Contiene:
+
+* dividendi per strumento finanziario
+
+---
+
+## Corporate Action Table
+
+Contiene:
+
+* split
+* reverse split
+* fusioni
+
+---
+
+## Bond Metadata Table
+
+Contiene:
+
+* caratteristiche obbligazioni
+
+---
+
+## ETF Metadata Table
+
+Contiene:
+
+* caratteristiche ETF
+
+---
+
+# 15. API interne
+
+## Regole generali API
+
+Se la risorsa indirizzata non esiste, il servizio restituisce `404`.
+
+Se la risorsa esiste ma il dato richiesto non è disponibile, il servizio restituisce `200` con payload esplicito di `data_availability`, `data_availability_reason` e valore dati `null` quando applicabile.
+
+Gli URL canonici delle risorse usano UUID interni. Identificativi naturali come ISIN, venue code, listing symbol o provider identifier devono essere risolti tramite endpoint di lookup, non usati come path canonici alternativi.
+
+Esempio:
+
+```json
+{
+  "instrument_id": "...",
+  "data_availability": "unavailable",
+  "data_availability_reason": "no_preferred_listing",
+  "price": null
+}
+```
+
+---
+
+## Ricerca strumento finanziario
+
+Restituisce strumenti finanziari raggruppati con le listing rilevanti per la query. La ricerca canonica consulta solo il database locale e non chiama Data Provider in modo sincrono.
+
+```http
+GET /instruments/search?q=enel
+```
+
+---
+
+## Discovery Search
+
+Ricerca best-effort su Data Provider esterni per trovare candidati non ancora presenti nel database locale. I risultati sono candidati provider-specifici e non sono dati canonici del Market Data Service finché non vengono acquisiti tramite workflow esplicito. `isin` può essere assente nei risultati di Discovery Search; viene confermato quando disponibile durante acquisition/normalization.
+
+Discovery Search è best-effort: deve rispettare rate limit configurabili, può essere disabilitata per provider o ambiente, non è garantita per tutti i Data Provider, e può restituire risultati incompleti o parziali.
+
+```http
+GET /instrument-discovery/search?q=Vanguard%20FTSE%20All-World
+```
+
+Esempio risposta:
+
+```json
+{
+  "candidates": [
+    {
+      "provider": "yahoo",
+      "provider_identifier": "VWCE.DE",
+      "name": "Vanguard FTSE All-World UCITS ETF Acc",
+      "isin": "IE00BK5BQT80",
+      "venue_code": "XETR",
+      "symbol": "VWCE",
+      "currency": "EUR",
+      "instrument_type": "etf"
+    }
+  ]
+}
+```
+
+---
+
+## Instrument Discovery Request
+
+Richiede l'acquisizione asincrona di un candidato trovato tramite Discovery Search o indicato esplicitamente da admin, utente o servizio di portafoglio. Se il Data Provider conferma il candidato, il servizio crea Financial Instrument e Listing. Se `add_to_universe=true`, li aggiunge alla Universe e avvia ingestion/backfill predefiniti; se `add_to_universe=false`, crea solo i record canonici/reference minimi e non abilita mantenimento automatico o backfill, salvo richiesta esplicita separata.
+
+```http
+POST /instrument-discovery-requests
+```
+
+Esempio richiesta:
+
+```json
+{
+  "provider": "yahoo",
+  "provider_identifier": "VWCE.DE",
+  "add_to_universe": true
+}
+```
+
+---
+
+## Lookup esatto strumento finanziario
+
+Risolve identificativi esatti consultando solo il database locale. Restituisce un match unico oppure un errore esplicito di ambiguità o not found.
+
+```http
+GET /instruments/lookup?isin=IT0003128367
+GET /instruments/lookup?venue_code=XMIL&symbol=ENEL
+GET /instruments/lookup?provider=yahoo&provider_symbol=ENEL.MI
+```
+
+---
+
+## Dettaglio strumento finanziario
+
+```http
+GET /instruments/{instrument_id}
+```
+
+---
+
+## Listing di uno strumento finanziario
+
+```http
+GET /instruments/{instrument_id}/listings
+```
+
+---
+
+## Prezzo corrente di una listing
+
+Endpoint canonico per i prezzi osservati.
+
+```http
+GET /listings/{listing_id}/prices/latest
+```
+
+Parametri opzionali:
+
+```text
+status=final
+```
+
+Di default restituisce il prezzo più fresco disponibile, anche se provvisorio. Con `status=final` restituisce l'ultimo prezzo finale disponibile.
+
+Esempio risposta:
+
+```json
+{
+  "listing_id": "...",
+  "instrument_id": "...",
+  "date": "2026-06-01",
+  "price": 8.18,
+  "price_kind": "close",
+  "adjusted_close": 8.12,
+  "currency": "EUR",
+  "status": "final",
+  "data_provider": "yahoo",
+  "retrieved_at": "2026-06-01T18:10:00Z"
+}
+```
+
+`price` indica sempre il close non aggiustato. `adjusted_close` è opzionale.
+
+---
+
+## Prezzo corrente di uno strumento finanziario
+
+Endpoint di convenienza. Usa la Preferred Listing dello strumento finanziario e restituisce quale listing è stata usata.
+
+```http
+GET /instruments/{instrument_id}/prices/latest
+```
+
+Parametri opzionali:
+
+```text
+status=final
+```
+
+---
+
+## Storico prezzi di una listing
+
+```http
+GET /listings/{listing_id}/prices/history
+```
+
+Parametri:
+
+```text
+from
+to
+status
+```
+
+V1 restituisce solo prezzi giornalieri.
+
+---
+
+## Storico prezzi di uno strumento finanziario
+
+Endpoint di convenienza. Usa la Preferred Listing dello strumento finanziario.
+
+```http
+GET /instruments/{instrument_id}/prices/history
+```
+
+Parametri:
+
+```text
+from
+to
+status
+```
+
+V1 restituisce solo prezzi giornalieri.
+
+---
+
+## Dividendi
+
+```http
+GET /instruments/{instrument_id}/dividends
+```
+
+---
+
+# 16. Job Scheduler
+
+## Aggregati
+
+Il modello usa due aggregati principali per garantire atomicità e coerenza:
+
+* **Financial Instrument aggregate**: possiede identità, status, metadata, dividends, corporate actions e relazione con le Listing. La Preferred Listing appartiene a questo aggregato.
+* **Listing price aggregate/series**: possiede gli Observed Prices per una singola Listing.
+
+Gli aggiornamenti sono atomici per aggregato. L'ingestion di prezzi non blocca o aggiorna l'intero aggregato Financial Instrument a meno che non sia necessario.
+
+---
+
+## Ingestion reliability
+
+I job di ingestion devono rispettare rate limit configurabili per Data Provider, applicare retry con backoff per errori transienti, salvare checkpoint per riprendere job lunghi, e lasciare retryabili gli item falliti. Le API canoniche di lettura non devono bloccarsi su chiamate sincrone ai Data Provider; fanno eccezione gli endpoint espliciti di Discovery Search, che sono best-effort e non restituiscono dati canonici.
+
+Il servizio non garantisce atomicità globale degli aggiornamenti sull'intera Universe. Gli aggiornamenti sono atomici per aggregato interessato, ad esempio per Listing price update o per Financial Instrument metadata update. Le API possono osservare freshness mista tra strumenti diversi; Data Provenance e `retrieved_at` indicano la freshness del singolo dato.
+
+---
+
+## Universe
+
+La Universe è l'insieme di Financial Instruments e Listings che il servizio mantiene tramite ingestion jobs. Il database può contenere strumenti finanziari fuori dalla Universe; in questo caso i dati possono esistere ma non sono mantenuti automaticamente.
+
+In v1 il servizio non importa un catalogo globale di tutti gli strumenti investibili. La Universe nasce da una seed list configurabile e cresce tramite richieste esplicite admin, portfolio-driven o user-initiated. La Discovery Search può aiutare a trovare candidati sui Data Provider, mentre l'Instrument Discovery Request acquisisce e avvia ingestion/backfill per i candidati selezionati.
+
+L'appartenenza alla Universe esiste sia a livello Financial Instrument sia a livello Listing:
+
+* Financial Instrument nella Universe: refresh di metadata, dividends e corporate actions.
+* Listing nella Universe: refresh degli observed prices.
+
+Una Listing non dovrebbe essere nella Universe se il suo Financial Instrument non esiste, ma non tutte le Listing di uno strumento finanziario devono essere mantenute.
+
+La Data Availability descrive se esistono dati utilizzabili e sufficientemente freschi. L'appartenenza alla Universe descrive se il servizio mantiene quei dati tramite schedulazione. I due concetti sono distinti.
+
+---
+
+## Daily Sync
+
+Ore:
+
+```text
+02:00 UTC
+```
+
+Operazioni:
+
+* nuovi strumenti finanziari nella Universe
+* metadata
+
+---
+
+## Backfill
+
+Quando una Listing entra nella Universe, il servizio effettua un backfill predefinito degli observed prices giornalieri degli ultimi 5 anni.
+
+Quando un Financial Instrument entra nella Universe, il servizio effettua un backfill predefinito di dividends e corporate actions degli ultimi 5 anni.
+
+Se il Data Provider dispone di meno storico, viene memorizzato lo storico disponibile. Backfill più estesi possono essere richiesti tramite workflow admin espliciti.
+
+---
+
+## Price Sync
+
+Frequenza indicativa:
+
+```text
+ogni 6 ore o più spesso, quando possibile
+```
+
+Operazioni:
+
+* aggiornamento prezzi
+
+---
+
+## Dividend Sync
+
+Ogni:
+
+```text
+24 ore
+```
+
+---
+
+# 17. Data Quality
+
+## Freshness e Data Availability
+
+Le regole di staleness sono definite per tipo di dato.
+
+Default v1:
+
+* Market Calendars: calcolati tramite libreria o dataset statico, con override manuali per festività o giornate di trading speciali.
+* Latest Price: stale se più vecchio dell'ultimo giorno di mercato completato atteso per il calendario della listing, oppure se non esiste una sync riuscita entro la tolleranza configurata.
+* Metadata: stale se non aggiornati da più di 7 giorni.
+* Dividends: stale se non aggiornati da più di 7 giorni.
+* Corporate Actions: stale se non aggiornate da più di 7 giorni.
+
+Ogni record deve essere validato.
+
+Controlli:
+
+* simboli duplicati nello stesso venue
+* ISIN duplicati quando applicabile
+* prezzi negativi
+* date future
+* volume negativo
+
+---
+
+# 18. Caching
+
+Il caching non è un requisito obbligatorio per v1. Il servizio deve funzionare correttamente usando PostgreSQL come fonte di verità anche senza cache esterna.
+
+Redis può essere introdotto in futuro come ottimizzazione per endpoint read-heavy, con TTL differenziati per tipo di dato e invalidazione coerente con i job di ingestion.
+
+TTL indicativi se Redis viene introdotto:
+
+```text
+Prezzi: 1 ora
+
+Metadata: 24 ore
+```
+
+---
+
+# 19. Gestione errori
+
+La fallback strategy è definita per tipo di dato e per singolo item.
+
+Per ogni tipo di dato, il servizio mantiene una priorità ordinata di Data Provider, ad esempio:
+
+```text
+Yahoo
+    ↓
+Alpha Vantage
+    ↓
+FMP
+```
+
+Durante l'ingestion, se il Data Provider preferito fallisce o non restituisce un item specifico, il servizio prova il Data Provider successivo per quell'item. In v1 il servizio non fonde valori conflittuali provenienti da provider diversi.
+
+Ogni record normalizzato deve conservare il Data Provider da cui deriva.
+
+---
+
+# 20. SLA
+
+Disponibilità target:
+
+```text
+99%
+```
+
+---
+
+# 21. Future evolutions
+
+## Versione 2
+
+Supporto:
+
+* tassi FX e conversione valutaria
+* fondi non-ETF
+* indici e index level
+* classificazioni PIR
+* realtime streaming
+* websocket
+* alert prezzo
+
+---
+
+## Versione 3
+
+Supporto:
+
+* opzioni
+* futures
+* commodities
+
+---
+
+# 22. Requisito fondamentale
+
+Tutti i servizi applicativi devono utilizzare esclusivamente il Market Data Service.
+
+Nessun servizio deve interrogare direttamente Yahoo Finance, Alpha Vantage o altri provider esterni.
+
+Il Market Data Service rappresenta la singola fonte di verità (Single Source of Truth) dell'intera piattaforma.

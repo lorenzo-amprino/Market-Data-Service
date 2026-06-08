@@ -1,0 +1,3 @@
+# Use daily observed prices instead of realtime or intraday data in v1
+
+Market Data Service v1 will maintain historical daily observed price series for Listings, including unadjusted OHLCV values and the daily close needed by consumers to understand how an instrument moved over time. V1 deliberately excludes realtime quotes, intraday bars, and internally calculated adjusted OHLCV series because daily observed data is sufficient for the initial portfolio and analytics use cases while avoiding the higher provider cost, rate-limit pressure, licensing complexity, storage volume, and normalization ambiguity of realtime or intraday market data.

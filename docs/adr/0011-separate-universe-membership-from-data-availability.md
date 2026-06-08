@@ -1,0 +1,3 @@
+# Separate Universe membership from Data Availability
+
+Market Data Service will distinguish Universe membership from Data Availability: Universe membership defines which Financial Instruments and Listings are automatically maintained by ingestion jobs, while Data Availability describes whether stored data is usable, stale, or unavailable for consumers. Data already stored for instruments or listings outside the Universe remains readable when present, but is not automatically refreshed; for instruments never acquired by the service and already delisted, historical recovery is best-effort through explicit ingestion or admin backfill when a Data Provider still supports identification and history, not a guarantee of ordinary read APIs.

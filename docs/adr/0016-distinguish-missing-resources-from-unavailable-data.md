@@ -1,0 +1,3 @@
+# Distinguish missing resources from unavailable data
+
+Market Data Service APIs will return `404` when the addressed resource does not exist, but will return `200` with explicit Data Availability, an optional reason, and a null data value when the resource exists and the requested market data is stale or unavailable. This deliberately avoids using `404` for missing data on known resources, so consumers can distinguish identity and routing errors from valid resources whose provider data is temporarily unavailable, not maintained, or not applicable, and can choose retry, fallback, or user-facing messaging accordingly.

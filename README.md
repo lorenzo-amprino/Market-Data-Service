@@ -24,7 +24,14 @@ src/main/java/com/lamprino/marketdata
   config/         Spring configuration
 ```
 
-This scaffold intentionally contains no Market Data domain/API behavior beyond application bootstrapping.
+The service currently exposes local PostgreSQL-backed Financial Instrument catalog reads:
+
+```text
+GET /instruments/search?q={query}&limit={limit}
+GET /instruments/{instrument_id}
+```
+
+These APIs read canonical local database records only and do not call external Data Providers synchronously.
 
 ## Requirements
 
@@ -119,4 +126,8 @@ Flyway is configured to load migrations from:
 src/main/resources/db/migration
 ```
 
-The initial v1 schema is intentionally not implemented in this scaffold.
+The initial v1 schema creates the local Financial Instrument catalog tables used by the read APIs:
+
+- `financial_instrument`
+- `venue`
+- `listing`

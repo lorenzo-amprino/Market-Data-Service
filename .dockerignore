@@ -1,0 +1,11 @@
+.git
+.idea
+.vscode
+target
+.docker
+postgres-data
+pgdata
+logs
+*.log
+.env
+.env.*

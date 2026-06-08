@@ -1,0 +1,112 @@
+# Operating system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Editor and IDE local state
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.project
+.classpath
+.settings/
+.factorypath
+
+# Java / Spring Boot build outputs
+build/
+target/
+out/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# Keep build-tool wrapper JARs versioned when present
+!gradle/wrapper/gradle-wrapper.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+.gradle-cache/
+
+# Maven
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar.sha256
+release.properties
+dependency-reduced-pom.xml
+
+# Spring Boot / local runtime
+*.pid
+*.hprof
+hs_err_pid*
+replay_pid*
+/application-local.properties
+/application-local.yml
+/application-local.yaml
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Environment variables, secrets, credentials
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+secrets/
+
+# Test, coverage, and generated reports
+coverage/
+htmlcov/
+.jacoco/
+jacoco.exec
+jacoco*.exec
+surefire-reports/
+failsafe-reports/
+
+# Containers and local infrastructure state
+.docker/
+docker-data/
+postgres-data/
+pgdata/
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+.tmp/
+tmp/
+temp/
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Node/tooling artifacts, if documentation or frontend tooling is added
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Agent/local scratch files
+.agent-cache/
+.pi-cache/

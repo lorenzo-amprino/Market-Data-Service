@@ -1,0 +1,5 @@
+spring:
+  flyway:
+    clean-disabled: false
+  jpa:
+    show-sql: false

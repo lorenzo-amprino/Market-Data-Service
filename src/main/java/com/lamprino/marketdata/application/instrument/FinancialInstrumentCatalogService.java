@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentDetail;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentLookup;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentSummary;
+import com.lamprino.marketdata.domain.model.ListingDetail;
 import com.lamprino.marketdata.domain.repository.FinancialInstrumentCatalogRepository;
 
 @Service
@@ -33,6 +34,13 @@ public class FinancialInstrumentCatalogService {
 
     public Optional<FinancialInstrumentDetail> findById(UUID instrumentId) {
         return repository.findById(instrumentId);
+    }
+
+    public Optional<List<ListingDetail>> listingsForInstrument(UUID instrumentId) {
+        if (!repository.existsById(instrumentId)) {
+            return Optional.empty();
+        }
+        return Optional.of(repository.findListingsByInstrumentId(instrumentId));
     }
 
     public Optional<FinancialInstrumentLookup> lookupByIsin(String isin) {

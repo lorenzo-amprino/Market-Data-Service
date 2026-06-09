@@ -28,6 +28,9 @@ The service currently exposes local PostgreSQL-backed Financial Instrument catal
 
 ```text
 GET /instruments/search?q={query}&limit={limit}
+GET /instruments/lookup?isin={isin}
+GET /instruments/lookup?venue_code={venue_code}&symbol={symbol}
+GET /instruments/lookup?provider={provider}&provider_identifier={provider_identifier}
 GET /instruments/{instrument_id}
 ```
 
@@ -131,3 +134,5 @@ The initial v1 schema creates the local Financial Instrument catalog tables used
 - `financial_instrument`
 - `venue`
 - `listing`
+- `data_provider`
+- `provider_identifier`

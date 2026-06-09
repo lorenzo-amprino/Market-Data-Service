@@ -21,7 +21,11 @@ class InstrumentErrorHandler {
                         Map.of())));
     }
 
-    @ExceptionHandler({MissingServletRequestParameterException.class, MethodArgumentTypeMismatchException.class})
+    @ExceptionHandler({
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class,
+            FinancialInstrumentCatalogController.InvalidLookupRequestException.class
+    })
     ResponseEntity<ErrorResponse> invalidRequest() {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(new ErrorBody(

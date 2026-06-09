@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.lamprino.marketdata.application.instrument.FinancialInstrumentCatalogService;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentDetail;
+import com.lamprino.marketdata.domain.model.FinancialInstrumentLookup;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentSummary;
 import com.lamprino.marketdata.domain.model.ListingSummary;
 
@@ -34,6 +35,37 @@ class FinancialInstrumentCatalogController {
                 .map(InstrumentSummaryResponse::from)
                 .toList();
         return new InstrumentSearchResponse(items, new PageResponse(limit == null ? 50 : Math.min(Math.max(limit, 1), 100), null));
+    }
+
+    @GetMapping("/instruments/lookup")
+    InstrumentLookupResponse lookup(
+            @RequestParam(value = "isin", required = false) String isin,
+            @RequestParam(value = "venue_code", required = false) String venueCode,
+            @RequestParam(value = "symbol", required = false) String symbol,
+            @RequestParam(value = "provider", required = false) String provider,
+            @RequestParam(value = "provider_identifier", required = false) String providerIdentifier) {
+        if (isin != null) {
+            return service.lookupByIsin(isin)
+                    .map(InstrumentLookupResponse::from)
+                    .orElseThrow(InstrumentNotFoundException::new);
+        }
+        if (venueCode != null || symbol != null) {
+            if (venueCode == null || symbol == null) {
+                throw new InvalidLookupRequestException();
+            }
+            return service.lookupByVenueCodeAndSymbol(venueCode, symbol)
+                    .map(InstrumentLookupResponse::from)
+                    .orElseThrow(InstrumentNotFoundException::new);
+        }
+        if (provider != null || providerIdentifier != null) {
+            if (provider == null || providerIdentifier == null) {
+                throw new InvalidLookupRequestException();
+            }
+            return service.lookupByProviderIdentifier(provider, providerIdentifier)
+                    .map(InstrumentLookupResponse::from)
+                    .orElseThrow(InstrumentNotFoundException::new);
+        }
+        throw new InvalidLookupRequestException();
     }
 
     @GetMapping("/instruments/{instrumentId}")
@@ -93,6 +125,40 @@ class FinancialInstrumentCatalogController {
         }
     }
 
+    record InstrumentLookupResponse(
+            @JsonProperty("instrument_id") UUID instrumentId,
+            @JsonProperty("matched_by") String matchedBy,
+            InstrumentSummaryWithoutListingsResponse instrument,
+            ListingSummaryResponse listing) {
+
+        static InstrumentLookupResponse from(FinancialInstrumentLookup lookup) {
+            return new InstrumentLookupResponse(
+                    lookup.instrument().instrumentId(),
+                    lookup.matchedBy(),
+                    InstrumentSummaryWithoutListingsResponse.from(lookup.instrument()),
+                    lookup.listing() == null ? null : ListingSummaryResponse.from(lookup.listing()));
+        }
+    }
+
+    record InstrumentSummaryWithoutListingsResponse(
+            @JsonProperty("instrument_id") UUID instrumentId,
+            String name,
+            @JsonProperty("instrument_type") String instrumentType,
+            String isin,
+            String status,
+            @JsonProperty("data_availability") String dataAvailability) {
+
+        static InstrumentSummaryWithoutListingsResponse from(FinancialInstrumentSummary instrument) {
+            return new InstrumentSummaryWithoutListingsResponse(
+                    instrument.instrumentId(),
+                    instrument.name(),
+                    instrument.instrumentType(),
+                    instrument.isin(),
+                    instrument.status(),
+                    instrument.dataAvailability());
+        }
+    }
+
     record InstrumentDetailResponse(
             @JsonProperty("instrument_id") UUID instrumentId,
             String name,
@@ -122,5 +188,9 @@ class FinancialInstrumentCatalogController {
 
     @ResponseStatus(HttpStatus.NOT_FOUND)
     static class InstrumentNotFoundException extends RuntimeException {
+    }
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    static class InvalidLookupRequestException extends RuntimeException {
     }
 }

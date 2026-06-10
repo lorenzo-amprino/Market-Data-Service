@@ -17,7 +17,9 @@ import org.springframework.stereotype.Repository;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentDetail;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentLookup;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentSummary;
+import com.lamprino.marketdata.domain.model.ListingDetail;
 import com.lamprino.marketdata.domain.model.ListingSummary;
+import com.lamprino.marketdata.domain.model.VenueSummary;
 import com.lamprino.marketdata.domain.repository.FinancialInstrumentCatalogRepository;
 
 @Repository
@@ -86,6 +88,42 @@ class JdbcFinancialInstrumentCatalogRepository implements FinancialInstrumentCat
                         Map.of()), instrumentId)
                 .stream()
                 .findFirst();
+    }
+
+    @Override
+    public boolean existsById(UUID instrumentId) {
+        assertJdbcTemplateAvailable();
+        Boolean exists = jdbcTemplate.queryForObject("""
+                select exists(select 1 from financial_instrument where id = ?)
+                """, Boolean.class, instrumentId);
+        return Boolean.TRUE.equals(exists);
+    }
+
+    @Override
+    public List<ListingDetail> findListingsByInstrumentId(UUID instrumentId) {
+        assertJdbcTemplateAvailable();
+        return jdbcTemplate.query("""
+                select l.id as listing_id, l.symbol, l.currency_code, l.status as listing_status,
+                       l.preferred, l.data_availability, l.data_availability_reason,
+                       v.venue_code, v.name as venue_name, v.country, v.timezone, v.calendar_code
+                from listing l
+                join venue v on v.venue_code = l.venue_code
+                where l.financial_instrument_id = ?
+                order by l.preferred desc, l.venue_code asc, l.symbol asc
+                """, (rs, rowNum) -> new ListingDetail(
+                        rs.getObject("listing_id", UUID.class),
+                        rs.getString("symbol"),
+                        rs.getString("currency_code"),
+                        rs.getString("listing_status"),
+                        rs.getBoolean("preferred"),
+                        rs.getString("data_availability"),
+                        rs.getString("data_availability_reason"),
+                        new VenueSummary(
+                                rs.getString("venue_code"),
+                                rs.getString("venue_name"),
+                                rs.getString("country"),
+                                rs.getString("timezone"),
+                                rs.getString("calendar_code"))), instrumentId);
     }
 
     @Override

@@ -282,7 +282,13 @@ Response:
   "items": [
     {
       "listing_id": "uuid",
-      "venue_code": "XETR",
+      "venue": {
+        "venue_code": "XETR",
+        "name": "Xetra",
+        "country": "DE",
+        "timezone": "Europe/Berlin",
+        "calendar_code": "XETR"
+      },
       "symbol": "VWCE",
       "currency": "EUR",
       "status": "active",

@@ -16,7 +16,9 @@ import com.lamprino.marketdata.application.instrument.FinancialInstrumentCatalog
 import com.lamprino.marketdata.domain.model.FinancialInstrumentDetail;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentLookup;
 import com.lamprino.marketdata.domain.model.FinancialInstrumentSummary;
+import com.lamprino.marketdata.domain.model.ListingDetail;
 import com.lamprino.marketdata.domain.model.ListingSummary;
+import com.lamprino.marketdata.domain.model.VenueSummary;
 
 @RestController
 class FinancialInstrumentCatalogController {
@@ -75,6 +77,16 @@ class FinancialInstrumentCatalogController {
                 .orElseThrow(InstrumentNotFoundException::new);
     }
 
+    @GetMapping("/instruments/{instrumentId}/listings")
+    InstrumentListingsResponse listings(@PathVariable UUID instrumentId) {
+        List<ListingDetailResponse> items = service.listingsForInstrument(instrumentId)
+                .orElseThrow(InstrumentNotFoundException::new)
+                .stream()
+                .map(ListingDetailResponse::from)
+                .toList();
+        return new InstrumentListingsResponse(instrumentId, items);
+    }
+
     record InstrumentSearchResponse(
             List<InstrumentSummaryResponse> items,
             PageResponse page) {
@@ -122,6 +134,51 @@ class FinancialInstrumentCatalogController {
                     listing.currency(),
                     listing.status(),
                     listing.preferred());
+        }
+    }
+
+    record InstrumentListingsResponse(
+            @JsonProperty("instrument_id") UUID instrumentId,
+            List<ListingDetailResponse> items) {
+    }
+
+    record ListingDetailResponse(
+            @JsonProperty("listing_id") UUID listingId,
+            VenueResponse venue,
+            String symbol,
+            String currency,
+            String status,
+            boolean preferred,
+            @JsonProperty("data_availability") String dataAvailability,
+            @JsonProperty("data_availability_reason") String dataAvailabilityReason) {
+
+        static ListingDetailResponse from(ListingDetail listing) {
+            return new ListingDetailResponse(
+                    listing.listingId(),
+                    VenueResponse.from(listing.venue()),
+                    listing.symbol(),
+                    listing.currency(),
+                    listing.status(),
+                    listing.preferred(),
+                    listing.dataAvailability(),
+                    listing.dataAvailabilityReason());
+        }
+    }
+
+    record VenueResponse(
+            @JsonProperty("venue_code") String venueCode,
+            String name,
+            String country,
+            String timezone,
+            @JsonProperty("calendar_code") String calendarCode) {
+
+        static VenueResponse from(VenueSummary venue) {
+            return new VenueResponse(
+                    venue.venueCode(),
+                    venue.name(),
+                    venue.country(),
+                    venue.timezone(),
+                    venue.calendarCode());
         }
     }
 

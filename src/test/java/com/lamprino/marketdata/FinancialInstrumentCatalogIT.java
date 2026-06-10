@@ -183,6 +183,69 @@ class FinancialInstrumentCatalogIT {
     }
 
     @Test
+    void listsFinancialInstrumentListingsWithVenueMarketCalendarFields() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-06-01T10:00:00Z");
+        UUID milanListingId = UUID.fromString("77777777-7777-7777-7777-777777777777");
+        jdbcTemplate.update("""
+                insert into venue (venue_code, name, country, timezone, calendar_code, created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?, ?)
+                """, "XMIL", "Borsa Italiana", "IT", "Europe/Rome", "XMIL", now, now);
+        jdbcTemplate.update("""
+                insert into listing (
+                  id, financial_instrument_id, venue_code, symbol, currency_code, status,
+                  preferred, data_availability, data_availability_reason, universe_member,
+                  sync_enabled, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, milanListingId, instrumentId, "XMIL", "VWCE", "EUR", "suspended", false,
+                "stale", "market_calendar_closed", false, true, now, now);
+
+        ResponseEntity<Map> response = restTemplate.getForEntity("/instruments/{id}/listings", Map.class, instrumentId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("instrument_id", instrumentId.toString());
+        assertThat((Iterable<?>) response.getBody().get("items"))
+                .hasSize(2)
+                .anySatisfy(item -> {
+                    Map<?, ?> listing = (Map<?, ?>) item;
+                    assertThat(listing.get("listing_id")).isEqualTo(listingId.toString());
+                    assertThat(listing.get("symbol")).isEqualTo("VWCE");
+                    assertThat(listing.get("currency")).isEqualTo("EUR");
+                    assertThat(listing.get("status")).isEqualTo("active");
+                    assertThat(listing.get("preferred")).isEqualTo(true);
+                    assertThat(listing.get("data_availability")).isEqualTo("available");
+                    assertThat(listing.get("data_availability_reason")).isNull();
+                    Map<?, ?> venue = (Map<?, ?>) listing.get("venue");
+                    assertThat(venue.get("venue_code")).isEqualTo("XETR");
+                    assertThat(venue.get("name")).isEqualTo("Xetra");
+                    assertThat(venue.get("country")).isEqualTo("DE");
+                    assertThat(venue.get("timezone")).isEqualTo("Europe/Berlin");
+                    assertThat(venue.get("calendar_code")).isEqualTo("XETR");
+                    assertThat(listing.containsKey("name")).isFalse();
+                    assertThat(listing.containsKey("isin")).isFalse();
+                    assertThat(listing.containsKey("instrument_type")).isFalse();
+                })
+                .anySatisfy(item -> {
+                    Map<?, ?> listing = (Map<?, ?>) item;
+                    assertThat(listing.get("listing_id")).isEqualTo(milanListingId.toString());
+                    assertThat(listing.get("status")).isEqualTo("suspended");
+                    Map<?, ?> venue = (Map<?, ?>) listing.get("venue");
+                    assertThat(venue.get("venue_code")).isEqualTo("XMIL");
+                    assertThat(venue.get("calendar_code")).isEqualTo("XMIL");
+                });
+    }
+
+    @Test
+    void returnsNotFoundWhenListingParentFinancialInstrumentIsMissing() {
+        UUID missingId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+
+        ResponseEntity<Map> response = restTemplate.getForEntity("/instruments/{id}/listings", Map.class, missingId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        Map<?, ?> error = (Map<?, ?>) response.getBody().get("error");
+        assertThat(error.get("code")).isEqualTo("instrument_not_found");
+    }
+
+    @Test
     void returnsFinancialInstrumentDetailsByCanonicalUuid() {
         ResponseEntity<Map> response = restTemplate.getForEntity("/instruments/{id}", Map.class, instrumentId);
 

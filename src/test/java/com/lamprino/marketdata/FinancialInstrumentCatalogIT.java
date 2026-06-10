@@ -42,6 +42,7 @@ class FinancialInstrumentCatalogIT {
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("delete from observed_price");
         jdbcTemplate.update("delete from provider_identifier");
         jdbcTemplate.update("delete from listing");
         jdbcTemplate.update("delete from venue");
@@ -243,6 +244,97 @@ class FinancialInstrumentCatalogIT {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         Map<?, ?> error = (Map<?, ?>) response.getBody().get("error");
         assertThat(error.get("code")).isEqualTo("instrument_not_found");
+    }
+
+    @Test
+    void returnsFreshestLatestListingPriceWithDataProvenance() {
+        OffsetDateTime retrievedAt = OffsetDateTime.parse("2026-06-02T18:10:00Z");
+        insertObservedPrice("2026-06-01", "final", "8.10", "8.20", "8.05", "8.18", "8.12", "1200000", retrievedAt.minusDays(1));
+        insertObservedPrice("2026-06-02", "provisional", "8.18", "8.30", "8.15", "8.25", null, "900000", retrievedAt);
+
+        ResponseEntity<Map> response = restTemplate.getForEntity(
+                "/listings/{id}/prices/latest", Map.class, listingId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("listing_id", listingId.toString());
+        assertThat(response.getBody()).containsEntry("instrument_id", instrumentId.toString());
+        assertThat(response.getBody()).containsEntry("date", "2026-06-02");
+        assertThat(response.getBody()).containsEntry("price", 8.25);
+        assertThat(response.getBody()).containsEntry("price_kind", "close");
+        assertThat(response.getBody()).containsEntry("close", 8.25);
+        assertThat(response.getBody()).containsEntry("currency", "EUR");
+        assertThat(response.getBody()).containsEntry("status", "provisional");
+        assertThat(response.getBody()).containsEntry("data_availability", "available");
+        assertThat(response.getBody()).containsEntry("data_availability_reason", null);
+        assertThat(response.getBody()).containsEntry("data_provider", "yahoo");
+        assertThat(response.getBody()).containsEntry("retrieved_at", "2026-06-02T18:10:00Z");
+    }
+
+    @Test
+    void canRequestLatestFinalListingPriceOnly() {
+        OffsetDateTime retrievedAt = OffsetDateTime.parse("2026-06-02T18:10:00Z");
+        insertObservedPrice("2026-06-01", "final", "8.10", "8.20", "8.05", "8.18", "8.12", "1200000", retrievedAt.minusDays(1));
+        insertObservedPrice("2026-06-02", "provisional", "8.18", "8.30", "8.15", "8.25", null, "900000", retrievedAt);
+
+        ResponseEntity<Map> response = restTemplate.getForEntity(
+                "/listings/{id}/prices/latest?status=final", Map.class, listingId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("date", "2026-06-01");
+        assertThat(response.getBody()).containsEntry("status", "final");
+        assertThat(response.getBody()).containsEntry("price", 8.18);
+    }
+
+    @Test
+    void returnsDataAvailabilityWhenExistingListingHasNoUsablePrice() {
+        jdbcTemplate.update("""
+                update listing
+                set data_availability = ?, data_availability_reason = ?
+                where id = ?
+                """, "unavailable", "provider_unavailable", listingId);
+
+        ResponseEntity<Map> response = restTemplate.getForEntity(
+                "/listings/{id}/prices/latest", Map.class, listingId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).containsEntry("listing_id", listingId.toString());
+        assertThat(response.getBody()).containsEntry("instrument_id", instrumentId.toString());
+        assertThat(response.getBody()).containsEntry("price", null);
+        assertThat(response.getBody()).containsEntry("data_availability", "unavailable");
+        assertThat(response.getBody()).containsEntry("data_availability_reason", "provider_unavailable");
+        assertThat(response.getBody()).containsEntry("date", null);
+        assertThat(response.getBody()).containsEntry("data_provider", null);
+    }
+
+    @Test
+    void returnsNotFoundWhenLatestPriceListingIsMissing() {
+        UUID missingId = UUID.fromString("33333333-3333-3333-3333-333333333333");
+
+        ResponseEntity<Map> response = restTemplate.getForEntity(
+                "/listings/{id}/prices/latest", Map.class, missingId);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        Map<?, ?> error = (Map<?, ?>) response.getBody().get("error");
+        assertThat(error.get("code")).isEqualTo("listing_not_found");
+    }
+
+    private void insertObservedPrice(
+            String priceDate,
+            String status,
+            String open,
+            String high,
+            String low,
+            String close,
+            String adjustedClose,
+            String volume,
+            OffsetDateTime retrievedAt) {
+        jdbcTemplate.update("""
+                insert into observed_price (
+                  listing_id, price_date, open, high, low, close, adjusted_close, volume,
+                  status, data_provider_code, retrieved_at, created_at, updated_at
+                ) values (?, ?::date, ?::numeric, ?::numeric, ?::numeric, ?::numeric, ?::numeric, ?::numeric, ?, ?, ?, ?, ?)
+                """, listingId, priceDate, open, high, low, close, adjustedClose, volume,
+                status, "yahoo", retrievedAt, retrievedAt, retrievedAt);
     }
 
     @Test

@@ -1,3 +1,10 @@
+create table currency (
+  currency_code text primary key,
+
+  constraint currency_code_format_check
+    check (currency_code ~ '^[A-Z]{3}$')
+);
+
 create table observed_price (
   listing_id uuid not null references listing (id),
   price_date date not null,
@@ -28,7 +35,15 @@ create table observed_price (
   constraint observed_price_adjusted_close_non_negative_check
     check (adjusted_close is null or adjusted_close >= 0),
   constraint observed_price_volume_non_negative_check
-    check (volume is null or volume >= 0)
+    check (volume is null or volume >= 0),
+  constraint observed_price_ohlc_bounds_check
+    check (
+      (low is null or open is null or low <= open)
+      and (high is null or open is null or high >= open)
+      and (low is null or low <= close)
+      and (high is null or high >= close)
+      and (low is null or high is null or low <= high)
+    )
 );
 
 create index observed_price_listing_latest_idx
@@ -43,7 +58,7 @@ create table dividend (
   ex_date date not null,
   payment_date date null,
   amount numeric(20, 8) not null,
-  currency_code text not null,
+  currency_code text not null references currency (currency_code),
   data_provider_code text not null references data_provider (provider_code),
   retrieved_at timestamptz not null,
   created_at timestamptz not null,
@@ -86,6 +101,12 @@ create table corporate_action (
       or
       (ratio_numerator is not null and ratio_denominator is not null)
     ),
+  constraint corporate_action_target_check
+    check (
+      (action_type = 'merger' and target_financial_instrument_id is not null)
+      or
+      (action_type <> 'merger' and target_financial_instrument_id is null)
+    ),
   constraint corporate_action_unique
     unique (financial_instrument_id, action_type, effective_date)
 );
@@ -116,7 +137,7 @@ create table bond_metadata (
   maturity_date date null,
   coupon numeric(12, 6) null,
   coupon_frequency text null,
-  currency_code text null,
+  currency_code text null references currency (currency_code),
   bond_type text null,
   data_provider_code text null references data_provider (provider_code),
   retrieved_at timestamptz null,
@@ -167,23 +188,39 @@ create index provider_raw_response_provider_retrieved_at_idx
   on provider_raw_response (provider_code, retrieved_at desc);
 
 create table data_availability_status (
-  subject_type text not null,
-  subject_id uuid not null,
+  financial_instrument_id uuid null references financial_instrument (id),
+  listing_id uuid null references listing (id),
   data_type text not null,
   status text not null,
   reason text null,
   checked_at timestamptz not null,
   updated_at timestamptz not null,
 
-  primary key (subject_type, subject_id, data_type),
-
-  constraint data_availability_status_subject_type_check
-    check (subject_type in ('financial_instrument', 'listing')),
+  constraint data_availability_status_one_subject_check
+    check (
+      (financial_instrument_id is not null and listing_id is null)
+      or
+      (financial_instrument_id is null and listing_id is not null)
+    ),
   constraint data_availability_status_data_type_check
     check (data_type in ('metadata', 'latest_price', 'price_history', 'dividends', 'corporate_actions')),
+  constraint data_availability_status_subject_data_type_check
+    check (
+      (financial_instrument_id is not null and data_type in ('metadata', 'dividends', 'corporate_actions'))
+      or
+      (listing_id is not null and data_type in ('latest_price', 'price_history'))
+    ),
   constraint data_availability_status_status_check
     check (status in ('available', 'stale', 'unavailable'))
 );
+
+create unique index data_availability_status_financial_instrument_unique
+  on data_availability_status (financial_instrument_id, data_type)
+  where financial_instrument_id is not null;
+
+create unique index data_availability_status_listing_unique
+  on data_availability_status (listing_id, data_type)
+  where listing_id is not null;
 
 create index data_availability_status_status_idx
   on data_availability_status (status);
